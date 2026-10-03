@@ -1,0 +1,78 @@
+{
+  "name": "cc-bridge",
+  "version": "0.1.0",
+  "description": "日常 DeepSeek 用 /ccb 另开橙色 cc-bridge-tui；窗口里的 Claude Code 走 stream-json，DeepSeek 当 teammate 指挥",
+  "type": "module",
+  "icon": "./icon.svg",
+  "scripts": {
+    "test": "node --test tests/core.test.mjs tests/patches.test.mjs && node tests/mailbox-race.mjs"
+  },
+  "main": "./src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./preload": "./src/preload.mjs",
+    "./host-preload": "./src/host-preload.mjs",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./host.patch.yml": "./host.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "assets",
+    "skills",
+    "locale",
+    "icon.svg",
+    "cordis.patch.yml",
+    "host.patch.yml",
+    "probe-core-only.yml",
+    "contracts.json",
+    "check-upgrade.ps1",
+    "probe-claude.ps1",
+    "run.ps1",
+    "run-host.ps1",
+    "launch-window.ps1",
+    "install-plugin.ps1",
+    "uninstall-plugin.ps1",
+    "run-plugin.ps1",
+    "run-debug-mouse.ps1",
+    "kill-mine.ps1",
+    "launch-test.ps1",
+    "reset-tab.ps1",
+    "reset-terminal.ps1",
+    "inject.mjs",
+    "tests",
+    "README.md",
+    "LICENSE",
+    ".gitattributes"
+  ],
+  "engines": {
+    "node": ">=22.14",
+    "dsh": ">=0.2.0-rc.2"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./host.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-harness-tui/dsh-tui": ">=0.12.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-harness-tui/dsh-tui": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "dsh-tui",
+    "claude-code",
+    "claude",
+    "agent",
+    "agent-factory",
+    "tui"
+  ],
+  "license": "MIT"
+}

@@ -1,0 +1,74 @@
+# 窗口 / 特色整窗 overlay —— `dsh --profile dsh-tui --patch <此文件>`
+#
+# ⚠️ 这是**覆盖层**，不是 Host 组合包。日常 `plugin add` 用 host.patch.yml。
+# 本文件**不再 insert** `cc-bridge`：日常装上之后再 insert 会挂两行同 id。
+# 树里还没有这一行时，启动器会先叠 host.patch.yml（见 run.ps1）。
+#
+# 三件事（只对带 `--patch` 的这次启动生效）：
+#   ① 禁掉 dsh-agent-loop —— 它会在构造时抢占 setFactory
+#      ("Throws if a factory is already registered")
+#   ② 把本进程的 dsh-tui 显示路由改成 claude-code（状态栏跟真实模型）
+#   ③ 覆盖已有的 `id: cc-bridge` 整段 config（patch 的 config 是整段替换）
+#
+# 不写 `config.mode`：window 靠 `CCB_MODE=window` / `CCB_MAILBOX_ID`，
+# takeover 靠 `CCB_MODE=takeover` 或独立 profile 名。写死会压过环境变量。
+#
+# 绝不动 `~/.dsh/profiles/dsh-tui/cordis.patch.yml` —— 那个是全局的。
+
+- id: agent-loop
+  disabled: true
+
+# ── 让状态栏跟随 claude 实际用的模型与强度 ──────────────────────
+#
+# 状态栏显示的「模型 · 强度」本来是 dsh-TUI 自己的会话路由，跟 claude
+# 实际用什么毫无关系。要跟随，就得把 claude 的真实值喂进这条路由。
+#
+# `run.ps1` 启动前会跑 `probe-claude.ps1` 探测，把结果写进两个环境变量：
+#   CCB_CLAUDE_MODEL   —— claude 实际用的模型名
+#   CCB_CLAUDE_EFFORT  —— claude 实际用的思考强度
+#
+# 这里用 `!!js` 读走。探测失败时两个变量为空 → 回落成下面的字面量。
+#
+# ⚠️ 生效前提：插件启动时用 `ctx.llm.registerAdapter()` 注册了同名 provider
+#    （src/model-route.mjs）。没注册的话 `validateModelRoute` 会把整份路由
+#    打回默认值，状态栏就去显示 `deepseek-v4.1-flash` 了。
+#
+# ⚠️ 必须是成对的：只有 provider 没有 model 算「半配」，会被整份忽略、
+#    回落到全局的 `~/.dsh-tui/model.json`（那里是 wbp/deepseek-v4.1-flash）。
+#
+# ⚠️ patch 的 config 是**整段替换、不是深合并**
+#    （cordis-plugin-include 的 applyEntryPatches 里就是 `target[key] = value`），
+#    所以下面必须把 profile 原有的配置**全部照抄**一遍，漏一项就丢一项。
+#    对照 `~/.dsh/profiles/dsh-tui/cordis.patch.yml` 的 dsh-tui 那段。
+#    headless 没有 dsh-tui 行：这条会 warn 并跳过，不影响其余。
+- id: dsh-tui
+  name: "@deepseek-harness-tui/dsh-tui"
+  config:
+    provider: claude-code
+    model: !!js process.env.CCB_CLAUDE_MODEL ?? 'claude-code'
+    effort: !!js process.env.CCB_CLAUDE_EFFORT ?? 'max'
+    preset: !!js process.env.DSH_TUI_PRESET ?? undefined
+    workspace: !!js process.env.DSH_TUI_WORKSPACE_TARGET ?? undefined
+    sessionId: !!js process.env.DSH_TUI_RESUME_SESSION ?? undefined
+    splashFont: daily
+    whaleGirl: true
+    fullscreen: true
+    terminalImages: true
+    toolBackground: subtle
+    imageBacking: terminal
+
+# 覆盖 host 组合包插进去的那一行。不要写 `name`：insert 时相对路径会被
+# 锚成 file URL，断言对不上会整段跳过。不要再 insert。
+- id: cc-bridge
+  config:
+    # 工作目录跟随宿主（不写 cwd）。详见 host 时代的注释。
+    model: !!js process.env.CCB_CLAUDE_MODEL ?? 'claude-code'
+    modelProvider: 'claude-code'
+    modelDisplayName: 'Claude Code (cc-bridge)'
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max']
+    contextWindow: 256000
+    maidArt: 'assets/maid.png'
+    maidArtHappy: 'assets/maid-happy.png'
+    splashTitle: 'CLAUDE CODE'
+    splashSubtitle: 'BRIDGE'
+    welcomeTagline: '这用户有股味！'

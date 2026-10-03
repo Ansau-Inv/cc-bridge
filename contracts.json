@@ -1,0 +1,622 @@
+{
+  "_comment": [
+    "cc-bridge 依赖的全部外部契约 —— 升级 dsh / dsh-tui 后要逐项核对的东西。",
+    "",
+    "为什么把它做成数据而不是硬写在脚本里：",
+    "脚本会越长越难看清『到底依赖了什么』；而这张表本身就是一份文档，",
+    "改依赖时只动这里，check-upgrade.ps1 自动跟着查。",
+    "",
+    "每项 checkedBy 说明怎么验：",
+    "  module-export  —— 从 DSH 包的实际文件里 require 出来看类型",
+    "  type-text      —— 在 .d.ts 里 grep 关键字（契约的书面形式）",
+    "  source-text    —— 在 dsh-tui 的实现里 grep（行为契约）",
+    "  runtime        —— 只能真跑一轮才知道（交给 headless 检查）"
+  ],
+  "packages": {
+    "dsh-scope": {
+      "entry": "lib/index.js",
+      "exports": {
+        "createScope": "function"
+      },
+      "why": "给每个 agent mint 一个 scope。key 必须是对象，父级必须是有依赖的 ctx。"
+    },
+    "dsh-agent": {
+      "entry": "lib/index.js",
+      "exports": {
+        "agentEvents": "function"
+      },
+      "why": "建 agent 作用域的事件分发器（emit/serial）。"
+    },
+    "dsh-session": {
+      "entry": "lib/index.js",
+      "exports": {
+        "ToolCallRecovery": "function"
+      },
+      "optional": true,
+      "why": "悬空工具调用的官方回收器（0.2.0 新增）。缺了就退回手写的 callSeqs 差集。"
+    }
+  },
+  "types": [
+    {
+      "file": "dsh-agent/lib/types/runtime-types.d.ts",
+      "must": [
+        "AssistantStreamFrame",
+        "readonly type: 'start'",
+        "readonly type: 'chunk'",
+        "readonly type: 'end'"
+      ],
+      "why": "assistant-stream 帧协议。缺任一字段说明帧格式变了。"
+    },
+    {
+      "file": "dsh-agent/lib/types/runtime-types.d.ts",
+      "must": [
+        "kind: 'committed'"
+      ],
+      "why": "end 帧的 outcome.kind 是 'committed' 不是 'settled'（0.2.0 改的，我踩过）。"
+    },
+    {
+      "file": "dsh-agent/lib/types/runtime-types.d.ts",
+      "must": [
+        "runMaintenance"
+      ],
+      "why": "Agent 接口的维护任务钩子。"
+    },
+    {
+      "file": "dsh-llm/lib/types/types.d.ts",
+      "must": [
+        "type: 'text-delta'",
+        "type: 'reasoning-delta'",
+        "index: number"
+      ],
+      "why": "StreamChunk 的 delta 必填 index（标出属于第几个块）。"
+    },
+    {
+      "file": "dsh-agent/lib/types/index.d.ts",
+      "must": [
+        "AgentFactory",
+        "setFactory"
+      ],
+      "why": "整个项目的立足点：换掉 factory 就换了后端。"
+    },
+    {
+      "file": "dsh-session/lib/types/known-event-types.js",
+      "must": [],
+      "literal": [
+        "turn/start",
+        "turn/end",
+        "step/start",
+        "step/end",
+        "user/message",
+        "assistant/message",
+        "tool/call",
+        "tool/result",
+        "request/context",
+        "system/message"
+      ],
+      "why": "我发的所有 session 事件类型都必须在这个白名单里，否则持久化读路径会拒绝。"
+    },
+    {
+      "file": "dsh-session/lib/types/types.d.ts",
+      "must": [
+        "'tool/result'",
+        "SurfaceEventType"
+      ],
+      "why": "tool/result 是 surface 事件，必须带 surfaceOp。"
+    },
+    {
+      "file": "dsh-llm/lib/types/message.d.ts",
+      "must": [
+        "ToolMessageSource"
+      ],
+      "why": "tool/result 的 source 要 callId（不是 toolName），另外 message 上还要 toolCallId。"
+    }
+  ],
+  "tui": [
+    {
+      "file": "lib/types/dsh-adapter/inject-channel.js",
+      "must": [
+        "prompt.append",
+        "command.execute",
+        "prompt.submit"
+      ],
+      "why": "inject.mjs 依赖的注入协议。"
+    },
+    {
+      "file": "lib/types/dsh-adapter/channel/projection.js",
+      "must": [
+        "case 'system/message'",
+        "contextSegments.system"
+      ],
+      "why": "ctx bar 的 sys 分段靠 system/message 喂。"
+    },
+    {
+      "file": "lib/types/dsh-adapter/channel/projection.js",
+      "must": [
+        "renderStreamFrame",
+        "lastStreamRevision"
+      ],
+      "why": "流式帧的消费端；revision 单调递增的约束来自这里。"
+    },
+    {
+      "file": "lib/types/screens/StatusLine.js",
+      "must": [
+        "hover === 'ctx'",
+        "contextWindow"
+      ],
+      "why": "ctx 条 hover 才 morph 成进度条；contextWindow 来自 request/context 事件。"
+    },
+    {
+      "file": "lib/types/dsh-adapter/channel/binding-events.js",
+      "must": [
+        "agent/inbox/claimed"
+      ],
+      "why": "排队面板靠这个事件销账，不发就永远显示'排队中'。"
+    },
+    {
+      "file": "lib/types/components/maidPortrait.js",
+      "must": [
+        "export function loadMaidPortraits",
+        "loadOnce",
+        "trimTransparent"
+      ],
+      "why": "自定义立绘走真图路径的接缝：loadMaidPortraits 返回模块级缓存对象，data 是可写 Uint8Array。改了缓存策略或返回结构，替换就失效。"
+    },
+    {
+      "file": "lib/types/components/WhaleGirl.js",
+      "must": [
+        "WHALE_GIRL_ROWS",
+        "export function WhaleGirlArt"
+      ],
+      "why": "自定义立绘走字符画路径的接缝：原地覆写这个导出的 ANSI 行数组。"
+    },
+    {
+      "file": "lib/types/ink/terminal-image.js",
+      "must": [
+        "isTerminalImageSource",
+        "byteLength === bytes"
+      ],
+      "why": "真图源的合法性校验：data 的 byteLength 必须等于 width*height*4。所以要原地覆写内容、不能改尺寸 —— 改了会被静默判为非法源。"
+    },
+    {
+      "file": "lib/types/ink/components/Image.js",
+      "must": [
+        "imageData: image?.data"
+      ],
+      "why": "Image 把像素缓冲按引用传给 ink host —— 引用传递才是'原地覆写能生效'的前提。"
+    },
+    {
+      "file": "lib/types/components/Whale.js",
+      "must": [
+        "export function renderCellRows"
+      ],
+      "why": "半块渲染函数。直接用它的实现，免得自己写的转义序列跟它的配色细节对不上。"
+    },
+    {
+      "file": "lib/types/components/splashFonts.js",
+      "must": [
+        "export const SPLASH_FONTS",
+        "export function pickSplashFont",
+        "export function withTagline",
+        "export function splashFontById",
+        "tagline:"
+      ],
+      "why": "自定义开屏大字的接缝：原地改字体表里每款的 tagline。pickSplashFont 按日期取模返回表内对象（不是副本），withTagline 重算字距 —— 任一行为变了替换就失效。"
+    },
+    {
+      "file": "lib/types/components/bigfont.js",
+      "must": [
+        "export function renderBigText",
+        "export function bigTextWidth",
+        "font.glyphs[ch] ?? font.fallback"
+      ],
+      "why": "大字渲染。缺字退化成 fallback 方块 —— 这就是'字库只有 13 个字母'那条限制的来源。"
+    },
+    {
+      "file": "lib/types/components/LogoV2.js",
+      "must": [
+        "useState(() => pickSplashFont())",
+        "titleFont.tagline",
+        "withTagline(font, dailyEgg.top",
+        "stringWidth(tagline)",
+        "logo-tagline"
+      ],
+      "why": "大字的消费点：useState 只捕获字体对象、词每次渲染现读 —— 这是『补丁打在首帧之后也生效』的依据。欢迎语那两处：`logo-tagline` 是取词键，`stringWidth(tagline)` 是运行时算居中的依据（换多长的文案都会自动对齐）。"
+    },
+    {
+      "file": "lib/types/i18n.js",
+      "must": [
+        "const dict = {",
+        "'logo-tagline'",
+        "export const i18nDict = dict"
+      ],
+      "why": "换欢迎语的接缝：导出的 `i18nDict` 与内部的 `dict` 是**同一个对象**，所以原地改词条就能生效。若哪天改成导出副本，替换会静默失效。"
+    },
+    {
+      "file": "lib/types/components/splashFonts.js",
+      "must": [
+        "const BOLD_GLYPHS",
+        "const CLASSIC_GLYPHS",
+        "const SLAB_GLYPHS",
+        "const SQUARE",
+        "const BEVEL",
+        "const WIDE",
+        "const DOT",
+        "const STENCIL"
+      ],
+      "why": "补字形依赖的三套基准 + 五个变换。变换规则改了，splash-glyphs.mjs 的自校验会拒绝打补丁（明确失败而非画错字）。"
+    },
+    {
+      "file": "lib/types/dsh-adapter/themes.js",
+      "must": [
+        "class TuiThemeRuntime",
+        "super(ctx, 'tuiThemes')",
+        "register(descriptor",
+        "getTheme(validated.base)"
+      ],
+      "why": "橙色主题的注册接缝：ctx.tuiThemes.register()。合并方式 `{ ...getTheme(base), ...colors }` 决定了覆盖值不包装 —— 这是『hex 让大标题解析失败』那条坑的来源。"
+    },
+    {
+      "file": "lib/types/components/design-system/ThemeProvider.js",
+      "must": [
+        "DSH_TUI_THEME",
+        "theme ?? envThemeOverride() ?? readThemePref()"
+      ],
+      "why": "主题解析优先级：prop > 环境变量 > theme.json > OSC11。我们靠环境变量做到『只影响自己窗口』。"
+    },
+    {
+      "file": "lib/types/components/Spinner/spinnerUtils.js",
+      "must": [
+        "export function parseRGB",
+        "RGB_STRING_PATTERN"
+      ],
+      "why": "大标题取色走 parseRGB，它只认 rgb(r,g,b) 不认 hex —— 主题里必须用 rgb() 格式，否则标题偷偷回落成品牌蓝。"
+    },
+    {
+      "file": "lib/types/components/shimmer.js",
+      "must": [
+        "export const PALE",
+        "export const BRAND",
+        "export const ICE"
+      ],
+      "why": "大标题的回落常量。第二行终点是写死的 PALE（蓝），主题管不到 —— 只能靠字体 palette 覆盖。"
+    },
+    {
+      "file": "lib/types/components/LogoV2.js",
+      "must": [
+        "titleFont.palette?.from",
+        "titleFont.palette?.to ?? PALE"
+      ],
+      "why": "标题两行的取色链：palette 优先于主题色。这是改第二行终点色的唯一入口。"
+    },
+    {
+      "file": "lib/types/trajectory/effortIgnition.js",
+      "must": [
+        "export function ignitionHues",
+        "export function accentRamp",
+        "const HUES_DARK",
+        "const HUES_LIGHT",
+        "const BAND_DARK"
+      ],
+      "why": "输入框前缀 ❯ 的点火色。最高思考档时 EffortChargeGlyph 取 accentRamp().full（= ignitionHues()[0]），EffortTierBadge 直接取 ignitionHues()[0]。这几个都是模块常量、不走主题 —— 原地改数组元素的分量才能暖化。若哪天改成返回副本，替换会静默失效。"
+    },
+    {
+      "file": "lib/types/components/EffortChargeGlyph.js",
+      "must": [
+        "accentRamp(isLightThemeActive(themeName))",
+        "rgbString(ramp.full)",
+        "levels[levels.length - 1]"
+      ],
+      "why": "那枚 ❯ 的判定与取色：只有 effort 等于最高档才点亮（用户的 max 正好是最高的），点亮时用 ramp.full，否则 dimColor。"
+    },
+    {
+      "file": "lib/types/screens/StatusMetrics.js",
+      "must": [
+        "export const USED_SEGMENTS",
+        "export const FREE_SEGMENT_FILL",
+        "export const FREE_SEGMENT_TEXT"
+      ],
+      "why": "ctx 条配色。USED_SEGMENTS[i].color 是渲染时现读的，可原地改；但 FREE_SEGMENT_FILL/TEXT 是字符串常量、只读导出，且 StatusLine 里有内联的 freeFill 字面量 —— 那段只能靠 preload.mjs 包装 jsx 解决。"
+    },
+    {
+      "file": "lib/types/screens/StatusLine.js",
+      "must": [
+        "freeFill: '#2E3440'",
+        "themeName === 'light'",
+        "children: channel.model"
+      ],
+      "why": "两个接缝：ctx 条空闲段颜色的内联字面量（必须用 preload.mjs 抢在模块加载前包装 jsx —— 事后包装无效，ESM 具名导入是快照）；以及状态栏模型名的渲染点（显示的是 channel.model，即 model id 不是 display name）。"
+    },
+    {
+      "file": "lib/types/modelRoute.js",
+      "must": [
+        "export async function validateModelRoute",
+        "isUnregisteredProvider",
+        "models.length === 0 || models.some",
+        "DEFAULT_MODEL_ROUTE",
+        "export function resolveModelRoute"
+      ],
+      "why": "模型名能不能显示由这里定：provider 没注册 → 打回 fallback；模型表为空 → 接受；有表但没这个 id → 打回。绕过的办法是 ctx.llm.registerAdapter 注册一个只作声明的 provider（src/model-route.mjs）。优先级：cordis.yml 成对配置 > model.json > 默认值。"
+    },
+    {
+      "file": "lib/types/modelPrefs.js",
+      "must": [
+        "readModelPref",
+        "'model.json'",
+        "DATA_DIR"
+      ],
+      "why": "全局的 /model 选择存在 ~/.dsh-tui/model.json。这是**全局**文件，改它会影响所有 dsh-tui 窗口 —— 所以我们改成在 patch 里成对写 provider+model 来覆盖它。"
+    },
+    {
+      "file": "lib/types/utils/paths.js",
+      "must": [
+        "export const DATA_DIR",
+        "'.dsh-tui'"
+      ],
+      "why": "DATA_DIR 决定 model.json / theme.json / effort.json 等全局偏好的位置（~/.dsh-tui）。确认它不可按 profile 重定向，所以只能用 patch 里的成对配置绕开。"
+    },
+    {
+      "file": "lib/types/effortPrefs.js",
+      "must": [
+        "const EFFORT_TIER_ORDER",
+        "export function nearestLowerEffort",
+        "export function readEffortPref",
+        "'effort.json'"
+      ],
+      "why": "思考强度的档位逻辑。EFFORT_TIER_ORDER 是 ['off','low','medium','high','max'] —— **不含 xhigh**，而 claude 实测用的就是 xhigh。标准序只用于『偏好档不在路由表里就降一档』的回退，精确命中会短路放行，所以 adapter 里声明了 xhigh 就能原样显示。"
+    },
+    {
+      "file": "lib/types/dsh-adapter/channel/model-actions.js",
+      "must": [
+        "resolveModelInfo",
+        "state.reasoningEffort = applied",
+        "info.reasoning?.efforts",
+        "applyRouteMetadata"
+      ],
+      "why": "状态栏『模型 · 强度』的驱动点：efforts 来自 llm adapter 的 resolveModel（我们声明的档位表），contextWindow 来自 info.context。优先级 config.effort（patch）> ~/.dsh-tui/effort.json。"
+    },
+    {
+      "file": "lib/types/dsh-adapter/channel/projection.js",
+      "must": [
+        "case 'request/header'",
+        "state.reasoningEffort = effort"
+      ],
+      "why": "另一条能设 reasoningEffort 的路：request/header 事件（必须在 open turn 内追加）。我们目前走 adapter 声明，没走这条。"
+    },
+    {
+      "file": "lib/types/dsh-adapter/channel/projection-helpers.js",
+      "must": [
+        "'task'",
+        "'subagent'",
+        "'subagent_fork'",
+        "isSubagentToolName"
+      ],
+      "why": "队友工具名白名单。claude 实际发的名字是 `Agent`，我们上报时映射成 `Task` 才被认作队友卡（而不是普通工具卡）。白名单里没有 task 就整套失效。"
+    },
+    {
+      "file": "lib/types/dsh-adapter/subagents.js",
+      "must": [
+        "export class SubagentActivityStore",
+        "onSpawned(",
+        "appendOutput(",
+        "recordTool(",
+        "setTokens(",
+        "flushOutput("
+      ],
+      "why": "store 的类名、prototype 方法。subagent-bridge 靠包一层 `onSpawned` 拿实例，再调 appendOutput/recordTool/setTokens 写数据。任一改名，面板的 tokens/输出/工具三处会静默变空。"
+    },
+    {
+      "file": "lib/types/dsh-adapter/channel/subagent-projection.js",
+      "must": [
+        "subagent/start",
+        "subagent/end",
+        "pendingTaskDescriptions",
+        "description: pendingTaskDescriptions.shift()",
+        "linkSession"
+      ],
+      "why": "队友事件名 + 描述取自 tool/call 队列这个隐式契约。start 必须排在 tool/call 之后发，否则描述显示成占位值 `claude-code task`。"
+    },
+    {
+      "file": "lib/types/dsh-adapter/channel/binding-events.js",
+      "must": [
+        "ctx.on('subagent/start'",
+        "ctx.on('subagent/end'",
+        "ctx.on('session/event'"
+      ],
+      "why": "谁在听 subagent/start|end。这两条在 dsh-scope 的 scoped-events 表里 resolver 是 null（只校验 carrier 存在、不校验 subject），所以用主 agent 的 dispatch 发就合法。"
+    },
+    {
+      "file": "lib/types/screens/Chat.js",
+      "must": [
+        "SubagentDashboard",
+        "dashboard",
+        "SubagentDetailScene",
+        "setSubagentDetailId"
+      ],
+      "why": "队友面板与详情页的入口。`dashboard` 这个 action 绑定 Ctrl+A。"
+    },
+    {
+      "file": "lib/types/components/SubagentDetailScene.js",
+      "must": [
+        "PAGES = ['summary', 'output', 'tools']",
+        "outputEvents",
+        "toolCalls"
+      ],
+      "why": "详情页三页的数据来源。输出页读 outputEvents、工具页读 toolCalls —— 这两处正是我们绕过官方通道直接写 store 的地方。"
+    },
+    {
+      "file": "lib/types/commands.js",
+      "must": [
+        "export const LOCAL_COMMANDS",
+        "export const HIDDEN_COMMANDS",
+        "export const HIDDEN_COMMAND_NAMES",
+        "export function isHiddenCommandName",
+        "export function isLocalCommandName",
+        "export function parseCommandName"
+      ],
+      "why": "斜杠命令的两张表 + 解析函数。我们清空 LOCAL_COMMANDS 与 HIDDEN_COMMANDS/NAMES 的**内容**（不改绑定）来让 `/` 全部透传。任何一项改名或不再是可变的数组/Set，透传就失效。"
+    },
+    {
+      "file": "lib/types/components/PromptInput.js",
+      "must": [
+        "const known = command !== undefined || isHiddenCommandName(parsed.name)",
+        "if (!known)",
+        "return false",
+        "onRunCommand"
+      ],
+      "why": "拦截点本身。`!known → return false` 是「不认识就交给模型」那一步 —— 我们就是把 known 恒为 false。这个判断若挪走或改写，清空命令表就不再等于透传。"
+    },
+    {
+      "file": "lib/types/screens/Chat.js",
+      "must": [
+        "Unknown names fall through to the model",
+        "runCommand"
+      ],
+      "why": "runCommand 的 default 分支：外部命令走 registry，其余 return false 交给模型。"
+    },
+    {
+      "file": "lib/types/dsh-adapter/channel/skill-catalog.js",
+      "must": [
+        "const merged = [...LOCAL_COMMANDS]",
+        "deps.setCommands(merged)",
+        "refreshCommands"
+      ],
+      "why": "命令表的重建点。每次 commands/change、skills/change 都会从 `[...LOCAL_COMMANDS]` 重新合并 —— 所以必须清**内容**而不是换数组，否则下一次 refresh 就把命令捞回来了。"
+    },
+    {
+      "file": "lib/types/utils/keymap.js",
+      "must": [
+        "ctrl+d",
+        "ctrl+c",
+        "FIXED_RESERVED_COMBOS"
+      ],
+      "why": "摘掉 /exit 之后唯一的退出途径：Ctrl+D 是硬编码的，不经过命令表。这条若变，用户可能关不掉窗口。"
+    },
+    {
+      "file": "lib/types/adapter/channel/host-registry.js",
+      "must": [
+        "const channels = new WeakMap()",
+        "export function registerTuiChannel",
+        "export function getRegisteredTuiChannel",
+        "export function onTuiChannelRegistered"
+      ],
+      "why": "Channel 注册表。preload 用模块加载钩子把 `const channels = new WeakMap()` 改写成 globalThis 共享、并在 `registerTuiChannel` 入口push 一份到全局数组 —— 这是我们拿 live Channel 的**唯一**路径。三处字面量任一变化，`/clear` 归零与菜单抑制会静默失效（preload 的自校验会报「命中 0/3」）。"
+    },
+    {
+      "file": "lib/types/dsh-adapter/channel/session-reset.js",
+      "must": [
+        "export function resetSessionProjection",
+        "state.lastUsage = undefined",
+        "state.rows.length = 0",
+        "state.contextSegments"
+      ],
+      "why": "官方的「把投影重置成新会话」函数。我们 `/clear` 的字段清单**对齐它**（它列出了权威的该清哪些）。上游增删字段时，照它更新即可。"
+    },
+    {
+      "file": "lib/types/adapter/channel/read-view.js",
+      "must": [
+        "export function markChannelReadDirty",
+        "dirtyRevision"
+      ],
+      "why": "投影的脏标记。**改完 `state.rows` 必须调它** —— 否则读投影会因为「长度相同且未标脏」而复用旧快照，界面显示旧内容（改了不动）。"
+    },
+    {
+      "file": "lib/types/dsh-adapter/host-access.js",
+      "must": [
+        "installGlobalFiberInstrumentation()",
+        "configurable: false",
+        "wrappedRunners"
+      ],
+      "why": "⚠️ **危险文件，只许读不许 import**。它顶层就调 `installGlobalFiberInstrumentation()`，对**共享的** Cordis `Fiber` 类做 `Object.defineProperty(runner,'execute',{configurable:false})`，而防重守卫是**模块级** WeakSet —— 三份 dsh-tui 副本各一份。从第二份 import 就会重复 defineProperty 并抛 `Cannot redefine property: execute`，把启动搞崩（踩过）。本项存在是为了让升级检查提醒这个约束。"
+    },
+    {
+      "file": "lib/types/screens/StatusLine.js",
+      "must": [
+        "const usage = channel.lastUsage",
+        "formatCacheHitRate",
+        "usage.input + usage.cacheRead + usage.cacheWrite"
+      ],
+      "why": "ctx 条与缓存命中率的读数来源。我们靠把 `lastUsage` 置零来让条子归零 —— 这里改了字段名或算法，`/clear` 的归零就不对了。"
+    },
+    {
+      "file": "lib/types/dsh-adapter/channel/subagent-projection.js",
+      "must": [
+        "const syncNow = () =>",
+        "store.snapshot()",
+        "state.subagents = snapshot",
+        "if (!deps.visible())",
+        "if (id === undefined)",
+        "row.subagent = view",
+        "outputLines"
+      ],
+      "why": "⚠️ **关键契约**：`syncNow()` 需要 session 能关联到队友才能被触发（`onSessionEvent` 里 `if (id === undefined) return false`），而 claude 的队友没有 DSH 子会话 —— 所以那条路永远走不通。我们改为**自己镜像**store 状态进 `state.subagents` 和 `state.rows[].subagent`（两个不同的对象！）。若上游改了快照字段名或 syncRows 的结构，面板会显示不全。"
+    },
+    {
+      "file": "lib/types/dsh-adapter/subagents.js",
+      "must": [
+        "onSpawned(agentId, provider = 'subagent', model, info = {})",
+        "model: model ?? info.model ?? provider",
+        "patch(agentId, partial)",
+        "setTokens(agentId, usage)",
+        "snapshot()"
+      ],
+      "why": "store 的公开方法。注意 `onSpawned` 的**第三**个参数才是 model，而 projection 传的是 `info.provider` —— 这就是队友卡片显示 `claude-code`的原因（provider 名被当成模型名）。我们用 `patch()` 纠正它。"
+    },
+    {
+      "file": "lib/types/i18n.js",
+      "must": [
+        "export const i18nDict",
+        "'interrupted-ask-next'",
+        "'logo-star-title'"
+      ],
+      "why": "品牌名替换的落点。`i18nDict` 与内部 `dict` 是**同一个对象**，原地改条目属性即可生效。跳过列表见 src/brand-rename.mjs —— `balance-`/`coupon-`/`doctor-` 那些**不能改**（真的属于 DeepSeek 账户体系）。"
+    },
+    {
+      "file": "lib/types/settings/definitions.js",
+      "must": [
+        "export const SETTING_DEFINITIONS",
+        "hintDescriptions",
+        "whaleIdle"
+      ],
+      "why": "`/settings` 的文案是另一份硬编码（不在 i18n 里），品牌替换要单独走一遍。"
+    },
+    {
+      "file": "lib/types/dsh-adapter/plugin.js",
+      "must": [
+        "const meta = { cwd: sessionCwd }",
+        "created = await ctx.agents.create({",
+        "cwd: agent.session.header.cwd ?? sessionCwd"
+      ],
+      "why": "⚠️ **cwd 跟随宿主的唯一接缝**：dsh-tui 把会话工作目录放进 `meta.cwd` 传给 AgentFactory（`options.meta.cwd`），cc-bridge 靠读它对齐 claude 的工作目录。若上游不再传 meta.cwd，会静默回落到 `process.cwd()` —— 状态栏（宿主会话目录）和 claude 实际目录就分叉了，而且**不报错**。另外 `:489` 的 `header.cwd ?? sessionCwd` 说明 resume 时保留原会话的 cwd，所以续接不会漂移。"
+    }
+  ],
+  "runtime": [
+    {
+      "id": "basic-turn",
+      "prompt": "Reply exactly UPGRADE_OK",
+      "expect": [
+        "init:",
+        "usage:",
+        "turn 1 done ok=true"
+      ],
+      "why": "最小闭环：claude 起得来、usage 抓得到、turn 正常收尾。"
+    },
+    {
+      "id": "tool-call",
+      "prompt": "Run the shell command: echo UPGRADE_TOOL",
+      "expect": [
+        "tool call:",
+        "tool result:",
+        "tools=1"
+      ],
+      "why": "工具卡片链路。"
+    },
+    {
+      "id": "stream",
+      "prompt": "Say UPGRADE_STREAM",
+      "expect": [
+        "chunks="
+      ],
+      "why": "流式帧发出去了（chunks>0）。注意本地代理只发一个 delta，所以 chunks 通常=3。"
+    }
+  ]
+}

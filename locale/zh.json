@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "cc-bridge",
+    "description": "日常 DeepSeek 继续当主 Agent。/ccb 另开橙色 Claude Code 窗口；ccb_send / ccb_status / ccb_list / ccb_cancel 指挥它。"
+  }
+}

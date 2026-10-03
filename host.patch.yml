@@ -1,0 +1,23 @@
+# 日常 DSH / 网页的 Host 组合包补丁。
+#
+# `package.json` 的 `dsh.bundle.patch` 指向本文件。
+# `dsh plugin --profile dsh-tui add <本仓库>`（以及 web / headless）只会：
+#   · 把本插件插进组合树
+#   · 挂 /ccb 和 ccb_* 工具
+#
+# **不**禁 agent-loop，**不**改 dsh-tui 的模型 / 立绘 / 开屏。
+# 日常窗口保持官方 DeepSeek。
+#
+# ⚠️ 不要在这里写 `config.mode: host`。
+#    `resolveMode` 里显式 config.mode 压过环境变量；写死 host 之后
+#    `CCB_MODE=window` / 独立 profile 名 / 信箱都失效。
+#    不写 mode → 默认 host；橙色窗靠 overlay 覆盖 config，或靠 CCB_MODE。
+#
+# 橙色女仆 + factory 只发生在 /ccb 新开的那扇窗口（走 cordis.patch.yml）。
+
+- insert:
+    - id: cc-bridge
+      name: './src/index.mjs'
+      # 不声明 tools / commands：网页端这两个服务可能晚到，写进去会一直 pending。
+      # apply() 里轮询 ctx.get(..., false) 再挂 /ccb。
+      inject: [agents, sessions, subagents, attachments]

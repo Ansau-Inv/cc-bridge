@@ -1,0 +1,45 @@
+# 只挂「核心」的 cc-bridge —— 用来验证它**不依赖 dsh-tui**。
+#
+# 本插件的功能分两层：
+#
+#   核心层   注册 AgentFactory、跑 claude、翻译事件
+#            → 只依赖 dsh 的 agents / sessions 服务
+#   外观层   立绘、开屏大字、橙色主题、品牌名、斜杠透传、队友面板
+#            → 依赖 **dsh-tui 的内部实现**（靠源码改写 + 原型钩子）
+#
+# 「核心不绑 dsh-tui」这个结论是 package.json 把 dsh-tui 标成
+# **optional** peerDependency 的依据，所以要能**随时复验**。
+#
+# 用法（vanilla headless，树里还没有 cc-bridge 行）：
+#
+#   dsh --profile headless --patch .\host.patch.yml --patch .\probe-core-only.yml 'Reply exactly CORE_OK'
+#
+# 独立测试 profile 已经 plugin add 过时，不要再叠 host.patch.yml（会再 insert 一行）：
+#
+#   dsh --profile cc-bridge-headless --patch .\probe-core-only.yml 'Reply exactly CORE_OK'
+#
+# 期望：退出码 0，输出 CORE_OK，日志里 turn 1 done ok=true。
+# 日志里可能出现「没等到 live Channel」，那是预期的。
+#
+# 本文件是覆盖层：禁 agent-loop，并把已有的 cc-bridge 行改成 takeover + 关外观。
+# 不 insert，避免和 Host 组合包双挂。
+
+- id: agent-loop
+  disabled: true
+
+- id: cc-bridge
+  config:
+    # 必须显式 takeover：默认 host 只挂 /ccb，不会 setFactory。
+    # 这里写死是因为本文件给 headless 用，没有 CCB_MODE、也不是 cc-bridge-* profile。
+    mode: takeover
+    appearance: false
+    orangeTheme: false
+    brandRename: false
+    slashPassthrough: false
+    channelHooks: false
+    subagents: false
+    model: !!js process.env.CCB_CLAUDE_MODEL ?? 'claude-code'
+    modelProvider: 'claude-code'
+    modelDisplayName: 'Claude Code (cc-bridge)'
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max']
+    contextWindow: 256000

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "cc-bridge",
+    "description": "Keep daily DeepSeek as commander. /ccb opens an orange Claude Code window; ccb_send / ccb_status / ccb_list / ccb_cancel steer it."
+  }
+}
